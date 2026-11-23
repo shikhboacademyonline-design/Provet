@@ -623,22 +623,12 @@ async function startServer() {
   // Vite middleware or production static serving
   const isProd = process.env.NODE_ENV === 'production';
   if (!isProd) {
-    let viteMiddleware: express.RequestHandler | null = null;
-    app.use((req, res, next) => {
-      if (viteMiddleware) return viteMiddleware(req, res, next);
-      res.status(503).send('Starting Provet Enterprise ERP...');
-    });
-
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`Provet ERP server listening on http://localhost:${PORT}`);
-    });
-
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
-    viteMiddleware = vite.middlewares;
+    app.use(vite.middlewares);
   } else {
     const distPath = path.resolve(process.cwd(), 'dist');
     if (fs.existsSync(distPath)) {
@@ -647,10 +637,11 @@ async function startServer() {
         res.sendFile(path.join(distPath, 'index.html'));
       });
     }
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`Provet ERP server listening on http://localhost:${PORT}`);
-    });
   }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Provet ERP server listening on http://localhost:${PORT}`);
+  });
 }
 
 startServer();
