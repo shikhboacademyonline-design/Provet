@@ -1,0 +1,6 @@
+{
+  "name": "Provet ERP — Enterprise Accounts & HR Suite",
+  "description": "Comprehensive double-entry Accounting, Inventory (Weighted Average), Purchase, Sales, Financial Reporting, and HR & Payroll ERP for Provet.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
