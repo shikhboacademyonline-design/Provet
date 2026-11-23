@@ -21,7 +21,7 @@ interface FirebaseContextValue {
   lastSyncedAt: string | null;
   syncedRecords: number | null;
   syncError: string | null;
-  connectWithGoogle: () => Promise<void>;
+  connectWithGoogle: () => Promise<User | null>;
   disconnectFirebase: () => Promise<void>;
   syncWorkspace: (erpDb: ERPDatabase) => Promise<void>;
 }
@@ -81,12 +81,21 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return () => unsubSnap();
   }, [authReady, firebaseUser]);
 
-  const connectWithGoogle = useCallback(async () => {
+  const connectWithGoogle = useCallback(async (): Promise<User | null> => {
     setSyncError(null);
     try {
-      await signInWithPopup(firebaseAuth, googleProvider);
+      const cred = await signInWithPopup(firebaseAuth, googleProvider);
+      return cred.user;
     } catch (err) {
-      setSyncError(err instanceof Error ? err.message : 'Firebase Google sign-in failed');
+      const msg = err instanceof Error ? err.message : 'Firebase Google sign-in failed';
+      if (msg.includes('unauthorized-domain')) {
+        const domain = typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+        const friendly = `Domain "${domain}" is not yet authorized in Firebase Console -> Authentication -> Settings -> Authorized domains.`;
+        setSyncError(friendly);
+        throw new Error(friendly);
+      }
+      setSyncError(msg);
+      throw err instanceof Error ? err : new Error(msg);
     }
   }, []);
 

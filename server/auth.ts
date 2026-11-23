@@ -1,9 +1,11 @@
 import crypto from 'crypto';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import type { ERPUser, PermissionKey } from '../src/types/erp.ts';
 
-const DATA_DIR = path.resolve(process.cwd(), 'data');
+const IS_SERVERLESS = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NETLIFY);
+const DATA_DIR = IS_SERVERLESS ? path.join(os.tmpdir(), 'provet-erp-data') : path.resolve(process.cwd(), 'data');
 const USERS_FILE = path.join(DATA_DIR, 'erp-users.json');
 
 export const ALL_PERMISSIONS: PermissionKey[] = [

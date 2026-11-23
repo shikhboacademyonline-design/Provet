@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import type { User as FirebaseUser } from 'firebase/auth';
 import {
   BarChart3,
   BookOpen,
@@ -19,6 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { useFirebase } from './contexts/FirebaseContext';
+import { loadErpWorkspaceFromFirestore } from './firebase';
 import type { ERPDatabase, ERPUser, PermissionKey } from './types/erp';
 import { DateFilterModal, type ReportType } from './components/DateFilterModal';
 import { ReportViewerModal } from './components/ReportViewerModal';
@@ -31,7 +33,13 @@ import { AccountModule } from './components/modules/AccountModule';
 import { ReportsModule } from './components/modules/ReportsModule';
 import { HRModule } from './components/modules/HRModule';
 import { AdminUsersModule } from './components/modules/AdminUsersModule';
-import { apiFetch, setAuthToken, setOnUnauthorized } from './utils/api';
+import {
+  apiFetch,
+  disableCloudErpMode,
+  enableCloudErpMode,
+  setAuthToken,
+  setOnUnauthorized,
+} from './utils/api';
 import type { Lang } from './i18n/translations';
 import { labels } from './i18n/translations';
 
@@ -42,6 +50,7 @@ const ALL_MODULE_ORDER: PermissionKey[] = ['dashboard', 'stock', 'purchase', 'sa
 export default function App() {
   const [authChecking, setAuthChecking] = useState(true);
   const [setupRequired, setSetupRequired] = useState(false);
+  const [cloudMode, setCloudMode] = useState(false);
   const [currentUser, setCurrentUser] = useState<ERPUser | null>(null);
   const [db, setDb] = useState<ERPDatabase | null>(null);
   const [loadingDb, setLoadingDb] = useState(false);
@@ -64,17 +73,23 @@ export default function App() {
   const { firebaseUser, syncing, lastSyncedAt, syncError, connectWithGoogle, disconnectFirebase, syncWorkspace } =
     useFirebase();
 
+  // Only background-debounce sync when using local Express server + optional Firebase backup
   useEffect(() => {
-    if (!db || !firebaseUser) return;
+    if (!db || !firebaseUser || cloudMode) return;
     const timer = setTimeout(() => {
       syncWorkspace(db).catch((err) => {
         console.error('Firebase background sync error:', err);
       });
     }, 600);
     return () => clearTimeout(timer);
-  }, [db, firebaseUser, syncWorkspace]);
+  }, [db, firebaseUser, cloudMode, syncWorkspace]);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    disableCloudErpMode();
+    if (cloudMode) {
+      await disconnectFirebase().catch(() => undefined);
+    }
+    setCloudMode(false);
     setAuthToken(null);
     setCurrentUser(null);
     setDb(null);
@@ -86,6 +101,8 @@ export default function App() {
 
   useEffect(() => {
     setOnUnauthorized(() => {
+      disableCloudErpMode();
+      setCloudMode(false);
       setAuthToken(null);
       setCurrentUser(null);
       setDb(null);
@@ -93,9 +110,16 @@ export default function App() {
 
     let active = true;
     const checkAuthStatus = async () => {
-      for (let attempt = 0; attempt <= 3; attempt++) {
+      for (let attempt = 0; attempt <= 2; attempt++) {
         try {
           const res = await fetch('/api/auth/status');
+          if (res.status === 404) {
+            if (active) {
+              setSetupRequired(false);
+              setAuthChecking(false);
+            }
+            return;
+          }
           if (res.ok && (res.headers.get('content-type') || '').includes('application/json')) {
             const data = await res.json();
             if (active) {
@@ -108,8 +132,8 @@ export default function App() {
         } catch {
           // Retry on startup cold start
         }
-        if (attempt < 3) {
-          await new Promise((r) => setTimeout(r, 700));
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 600));
         }
       }
       if (active) {
@@ -128,6 +152,8 @@ export default function App() {
   };
 
   const handleAuthenticated = async (token: string, user: ERPUser) => {
+    disableCloudErpMode();
+    setCloudMode(false);
     setAuthToken(token);
     setCurrentUser(user);
     setSetupRequired(false);
@@ -147,6 +173,36 @@ export default function App() {
       setDb(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Database unavailable');
+    } finally {
+      setLoadingDb(false);
+    }
+  };
+
+  const handleFirebaseAuthenticated = async (fbUser: FirebaseUser) => {
+    setError(null);
+    setLoadingDb(true);
+    try {
+      const { db: cloudDb, erpUser } = await loadErpWorkspaceFromFirestore(fbUser);
+      enableCloudErpMode(cloudDb, async (nextDb) => {
+        await syncWorkspace(nextDb);
+      });
+      setAuthToken(null);
+      setCloudMode(true);
+      setSetupRequired(false);
+      setCurrentUser(erpUser);
+
+      const firstPermitted: AppSection =
+        erpUser.role === 'Admin' || erpUser.permissions.includes('dashboard')
+          ? 'dashboard'
+          : ALL_MODULE_ORDER.find((p) => erpUser.permissions.includes(p)) || 'dashboard';
+      setActiveSection(firstPermitted);
+      setDb(cloudDb);
+    } catch (err) {
+      disableCloudErpMode();
+      setCloudMode(false);
+      setCurrentUser(null);
+      setDb(null);
+      throw err;
     } finally {
       setLoadingDb(false);
     }
@@ -192,7 +248,13 @@ export default function App() {
   }
 
   if (!currentUser) {
-    return <LoginView setupRequired={setupRequired} onAuthenticated={handleAuthenticated} />;
+    return (
+      <LoginView
+        setupRequired={setupRequired}
+        onAuthenticated={handleAuthenticated}
+        onFirebaseAuthenticated={handleFirebaseAuthenticated}
+      />
+    );
   }
 
   if (error || !db) {
@@ -203,7 +265,7 @@ export default function App() {
           <p className="mt-1 text-xs text-[#4B6356]">{error || 'Database unavailable'}</p>
           <div className="mt-4 flex justify-center gap-2">
             <button
-              onClick={handleLogout}
+              onClick={() => void handleLogout()}
               className="rounded-lg border border-[#DDE7E0] px-4 py-2 text-xs font-semibold text-[#0D2319]"
             >
               Back to Login
@@ -385,7 +447,7 @@ export default function App() {
         {/* Footer Info */}
         <div className="border-t border-[#DDE7E0] px-4 py-3 text-[11px] text-[#4B6356]">
           <p className="font-semibold text-[#07432B]">{db.company.name} Enterprise</p>
-          <p className="mt-0.5">Weighted Avg · Double-Entry</p>
+          <p className="mt-0.5">{cloudMode ? 'Cloud Firestore Live' : 'Weighted Avg · Double-Entry'}</p>
         </div>
       </aside>
 
@@ -435,7 +497,7 @@ export default function App() {
               </button>
             ) : (
               <button
-                onClick={handleLogout}
+                onClick={() => void handleLogout()}
                 className="shrink-0 whitespace-nowrap rounded-lg bg-[#07432B] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#1E7134]"
               >
                 Sign Out
@@ -469,17 +531,19 @@ export default function App() {
                   <RefreshCw className={`h-3 w-3 ${syncing ? 'animate-spin' : ''}`} />
                   {syncing ? 'Syncing Cloud...' : lastSyncedAt ? `Firebase Synced (${lastSyncedAt})` : 'Sync Firebase'}
                 </button>
-                <button
-                  onClick={disconnectFirebase}
-                  className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-[#4B6356] hover:text-[#DC2626]"
-                  title="Disconnect Firebase Google session"
-                >
-                  <CloudOff className="h-3 w-3" />
-                </button>
+                {!cloudMode && (
+                  <button
+                    onClick={disconnectFirebase}
+                    className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-[#4B6356] hover:text-[#DC2626]"
+                    title="Disconnect Firebase Google session"
+                  >
+                    <CloudOff className="h-3 w-3" />
+                  </button>
+                )}
               </div>
             ) : (
               <button
-                onClick={connectWithGoogle}
+                onClick={() => void connectWithGoogle().catch(() => undefined)}
                 className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-[#07432B]/25 bg-white px-2.5 py-1 text-[11px] font-semibold text-[#07432B] hover:bg-[#EAF4EE]"
               >
                 <Cloud className="h-3.5 w-3.5 text-[#1E7134]" />
@@ -494,7 +558,7 @@ export default function App() {
               {lang === 'en' ? 'বাংলায় দেখুন' : 'Switch to English'}
             </button>
             <button
-              onClick={handleLogout}
+              onClick={() => void handleLogout()}
               className="inline-flex items-center gap-1.5 whitespace-nowrap font-semibold text-[#DC2626] hover:underline"
             >
               <LogOut className="h-3.5 w-3.5" />

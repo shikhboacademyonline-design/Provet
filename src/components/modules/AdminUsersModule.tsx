@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { KeyRound, Plus, Shield, UserCheck, UserX, X } from 'lucide-react';
+import { createCloudMember, listCloudMembers, updateCloudMember } from '../../firebase';
 import type { ERPUser, PermissionKey } from '../../types/erp';
-import { apiFetch } from '../../utils/api';
+import { apiFetch, isCloudErpMode } from '../../utils/api';
 
 interface AdminUsersModuleProps {
   currentUser: ERPUser;
@@ -18,6 +19,7 @@ const PERMISSION_META: { key: PermissionKey; label: string; desc: string }[] = [
 ];
 
 export const AdminUsersModule: React.FC<AdminUsersModuleProps> = ({ currentUser }) => {
+  const cloudMode = isCloudErpMode();
   const [users, setUsers] = useState<ERPUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null);
@@ -26,6 +28,7 @@ export const AdminUsersModule: React.FC<AdminUsersModuleProps> = ({ currentUser 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [form, setForm] = useState({
     userId: '',
+    email: '',
     fullName: '',
     password: '',
     role: 'Staff' as 'Admin' | 'Staff',
@@ -41,17 +44,37 @@ export const AdminUsersModule: React.FC<AdminUsersModuleProps> = ({ currentUser 
 
   const loadUsers = async () => {
     setLoading(true);
-    const res = await apiFetch('/api/admin/users');
-    if (res.ok) {
-      const data = await res.json();
-      setUsers(data.users || []);
+    try {
+      if (cloudMode) {
+        const members = await listCloudMembers();
+        setUsers(
+          members.map((m) => ({
+            id: m.uid,
+            userId: m.email || m.uid,
+            fullName: m.displayName,
+            role: m.role,
+            permissions: m.permissions,
+            active: m.active,
+            createdAt: '-',
+          }))
+        );
+      } else {
+        const res = await apiFetch('/api/admin/users');
+        if (res.ok) {
+          const data = await res.json();
+          setUsers(data.users || []);
+        }
+      }
+    } catch (err) {
+      setFeedback({ type: 'err', msg: err instanceof Error ? err.message : 'Unable to load users' });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
-    loadUsers();
-  }, []);
+    void loadUsers();
+  }, [cloudMode]);
 
   const toggleCreatePerm = (p: PermissionKey) => {
     setForm((prev) => ({
@@ -65,15 +88,54 @@ export const AdminUsersModule: React.FC<AdminUsersModuleProps> = ({ currentUser 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setFeedback(null);
+    if (cloudMode) {
+      try {
+        await createCloudMember({
+          uid: form.userId.trim(),
+          email: form.email.trim(),
+          displayName: form.fullName.trim(),
+          role: form.role,
+          permissions: form.permissions,
+        });
+        await loadUsers();
+        setShowCreateModal(false);
+        setForm({
+          userId: '',
+          email: '',
+          fullName: '',
+          password: '',
+          role: 'Staff',
+          permissions: ['dashboard', 'sales'],
+        });
+        setFeedback({ type: 'ok', msg: `Cloud workspace member "${form.email}" added.` });
+      } catch (err) {
+        setFeedback({ type: 'err', msg: err instanceof Error ? err.message : 'Failed to create cloud member' });
+      }
+      return;
+    }
+
     const res = await apiFetch('/api/admin/users', {
       method: 'POST',
-      body: JSON.stringify(form),
+      body: JSON.stringify({
+        userId: form.userId,
+        fullName: form.fullName,
+        password: form.password,
+        role: form.role,
+        permissions: form.permissions,
+      }),
     });
     const data = await res.json();
     if (!res.ok) return setFeedback({ type: 'err', msg: data.error });
     setUsers(data.users);
     setShowCreateModal(false);
-    setForm({ userId: '', fullName: '', password: '', role: 'Staff', permissions: ['dashboard', 'sales'] });
+    setForm({
+      userId: '',
+      email: '',
+      fullName: '',
+      password: '',
+      role: 'Staff',
+      permissions: ['dashboard', 'sales'],
+    });
     setFeedback({ type: 'ok', msg: `User "${data.user.userId}" created with assigned module access.` });
   };
 
@@ -88,6 +150,22 @@ export const AdminUsersModule: React.FC<AdminUsersModuleProps> = ({ currentUser 
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
+    if (cloudMode) {
+      try {
+        await updateCloudMember(editingUser.id, {
+          displayName: editFullName,
+          role: editRole,
+          permissions: editPerms,
+        });
+        await loadUsers();
+        setEditingUser(null);
+        setFeedback({ type: 'ok', msg: `Updated Cloud permissions for "${editingUser.userId}".` });
+      } catch (err) {
+        setFeedback({ type: 'err', msg: err instanceof Error ? err.message : 'Update failed' });
+      }
+      return;
+    }
+
     const res = await apiFetch(`/api/admin/users/${editingUser.id}`, {
       method: 'PATCH',
       body: JSON.stringify({
@@ -108,6 +186,17 @@ export const AdminUsersModule: React.FC<AdminUsersModuleProps> = ({ currentUser 
     if (u.id === currentUser.id) {
       return setFeedback({ type: 'err', msg: 'You cannot deactivate your own active Admin account.' });
     }
+    if (cloudMode) {
+      try {
+        await updateCloudMember(u.id, { active: !u.active });
+        await loadUsers();
+        setFeedback({ type: 'ok', msg: `Member "${u.userId}" is now ${!u.active ? 'Active' : 'Disabled'}.` });
+      } catch (err) {
+        setFeedback({ type: 'err', msg: err instanceof Error ? err.message : 'Status update failed' });
+      }
+      return;
+    }
+
     const res = await apiFetch(`/api/admin/users/${u.id}`, {
       method: 'PATCH',
       body: JSON.stringify({ active: !u.active }),
@@ -124,16 +213,20 @@ export const AdminUsersModule: React.FC<AdminUsersModuleProps> = ({ currentUser 
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#DDE7E0] pb-4">
         <div>
           <p className="text-xs font-medium text-[#1E7134]">Administration / Security</p>
-          <h1 className="text-2xl font-bold text-[#0D2319]">User Accounts & Access Control</h1>
+          <h1 className="text-2xl font-bold text-[#0D2319]">
+            {cloudMode ? 'Cloud Workspace Members & Access' : 'User Accounts & Access Control'}
+          </h1>
           <p className="mt-1 text-xs text-[#4B6356]">
-            Create User IDs & Passwords for team members and control exactly which ERP modules each user can access.
+            {cloudMode
+              ? 'Authorize team members by their Firebase Google UID & Email and assign exact ERP module permissions.'
+              : 'Create User IDs & Passwords for team members and control exactly which ERP modules each user can access.'}
           </p>
         </div>
         <button
           onClick={() => setShowCreateModal(true)}
           className="inline-flex items-center gap-2 rounded-lg bg-[#07432B] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1E7134]"
         >
-          <Plus className="h-4 w-4" /> Create New User
+          <Plus className="h-4 w-4" /> {cloudMode ? 'Add Cloud Member' : 'Create New User'}
         </button>
       </div>
 
@@ -150,15 +243,23 @@ export const AdminUsersModule: React.FC<AdminUsersModuleProps> = ({ currentUser 
       )}
 
       <div className="rounded-xl border border-[#DDE7E0] bg-white p-6">
-        <h2 className="mb-4 text-base font-semibold text-[#0D2319]">Registered ERP Users</h2>
+        <h2 className="mb-4 text-base font-semibold text-[#0D2319]">
+          {cloudMode ? 'Authorized Cloud Workspace Members' : 'Registered ERP Users'}
+        </h2>
         {loading ? (
           <p className="py-8 text-center text-xs text-[#4B6356]">Loading users...</p>
+        ) : users.length === 0 ? (
+          <p className="py-8 text-center text-xs text-[#4B6356]">
+            {cloudMode
+              ? 'No additional Google team members added yet. As Workspace Admin, you already have full access.'
+              : 'No registered users found.'}
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-[#DDE7E0] bg-[#F7FAF8] text-[#4B6356]">
-                  <th className="px-3 py-2.5 font-semibold">User ID</th>
+                  <th className="px-3 py-2.5 font-semibold">{cloudMode ? 'Email / UID' : 'User ID'}</th>
                   <th className="px-3 py-2.5 font-semibold">Full Name</th>
                   <th className="px-3 py-2.5 font-semibold">Role</th>
                   <th className="px-3 py-2.5 font-semibold">Module Access Permissions</th>
@@ -192,7 +293,7 @@ export const AdminUsersModule: React.FC<AdminUsersModuleProps> = ({ currentUser 
                           onClick={() => openEdit(u)}
                           className="inline-flex items-center gap-1 rounded border border-[#DDE7E0] bg-white px-2.5 py-1 text-[11px] font-medium text-[#07432B] hover:bg-[#EAF4EE]"
                         >
-                          <KeyRound className="h-3 w-3" /> Edit Access / Password
+                          <KeyRound className="h-3 w-3" /> {cloudMode ? 'Edit Access' : 'Edit Access / Password'}
                         </button>
                         {u.id !== currentUser.id && (
                           <button
@@ -220,7 +321,9 @@ export const AdminUsersModule: React.FC<AdminUsersModuleProps> = ({ currentUser 
             <div className="flex items-center justify-between border-b border-[#DDE7E0] px-6 py-4">
               <div className="flex items-center gap-2">
                 <Shield className="h-4 w-4 text-[#07432B]" />
-                <h3 className="text-base font-semibold text-[#0D2319]">Create User ID & Assign Access</h3>
+                <h3 className="text-base font-semibold text-[#0D2319]">
+                  {cloudMode ? 'Authorize Cloud Member & Assign Access' : 'Create User ID & Assign Access'}
+                </h3>
               </div>
               <button onClick={() => setShowCreateModal(false)} className="rounded p-1 text-[#4B6356] hover:bg-[#EAF4EE]">
                 <X className="h-4 w-4" />
@@ -229,14 +332,16 @@ export const AdminUsersModule: React.FC<AdminUsersModuleProps> = ({ currentUser 
             <form onSubmit={handleCreateUser} className="space-y-4 p-6">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="mb-1 block text-xs font-medium">User ID *</label>
+                  <label className="mb-1 block text-xs font-medium">
+                    {cloudMode ? 'Firebase User UID *' : 'User ID *'}
+                  </label>
                   <input
                     type="text"
                     required
                     minLength={3}
                     value={form.userId}
                     onChange={(e) => setForm({ ...form, userId: e.target.value })}
-                    placeholder="e.g. sales_rahim"
+                    placeholder={cloudMode ? 'Paste Firebase UID' : 'e.g. sales_rahim'}
                     className="w-full rounded-lg border border-[#DDE7E0] px-3 py-2 text-xs"
                   />
                 </div>
@@ -254,17 +359,31 @@ export const AdminUsersModule: React.FC<AdminUsersModuleProps> = ({ currentUser 
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs font-medium">Password (min 6 chars) *</label>
-                  <input
-                    type="password"
-                    required
-                    minLength={6}
-                    value={form.password}
-                    onChange={(e) => setForm({ ...form, password: e.target.value })}
-                    className="w-full rounded-lg border border-[#DDE7E0] px-3 py-2 text-xs"
-                  />
-                </div>
+                {cloudMode ? (
+                  <div>
+                    <label className="mb-1 block text-xs font-medium">Google Email *</label>
+                    <input
+                      type="email"
+                      required
+                      value={form.email}
+                      onChange={(e) => setForm({ ...form, email: e.target.value })}
+                      placeholder="staff@gmail.com"
+                      className="w-full rounded-lg border border-[#DDE7E0] px-3 py-2 text-xs"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="mb-1 block text-xs font-medium">Password (min 6 chars) *</label>
+                    <input
+                      type="password"
+                      required
+                      minLength={6}
+                      value={form.password}
+                      onChange={(e) => setForm({ ...form, password: e.target.value })}
+                      className="w-full rounded-lg border border-[#DDE7E0] px-3 py-2 text-xs"
+                    />
+                  </div>
+                )}
                 <div>
                   <label className="mb-1 block text-xs font-medium">Role</label>
                   <select
@@ -355,17 +474,19 @@ export const AdminUsersModule: React.FC<AdminUsersModuleProps> = ({ currentUser 
                 </div>
               </div>
 
-              <div>
-                <label className="mb-1 block text-xs font-medium">Reset Password (Optional, leave blank to keep current)</label>
-                <input
-                  type="password"
-                  minLength={6}
-                  value={resetPassword}
-                  onChange={(e) => setResetPassword(e.target.value)}
-                  placeholder="New password..."
-                  className="w-full rounded-lg border border-[#DDE7E0] px-3 py-2 text-xs"
-                />
-              </div>
+              {!cloudMode && (
+                <div>
+                  <label className="mb-1 block text-xs font-medium">Reset Password (Optional, leave blank to keep current)</label>
+                  <input
+                    type="password"
+                    minLength={6}
+                    value={resetPassword}
+                    onChange={(e) => setResetPassword(e.target.value)}
+                    placeholder="New password..."
+                    className="w-full rounded-lg border border-[#DDE7E0] px-3 py-2 text-xs"
+                  />
+                </div>
+              )}
 
               {editRole === 'Staff' && (
                 <div>
