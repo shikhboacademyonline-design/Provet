@@ -7,6 +7,47 @@ interface LoginViewProps {
   onAuthenticated: (token: string, user: ERPUser) => void;
 }
 
+async function fetchAuthWithRetry(
+  url: string,
+  body: Record<string, unknown>,
+  retries = 3
+): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt < retries) {
+        await new Promise((r) => setTimeout(r, 700));
+        continue;
+      }
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        if (attempt < retries) {
+          await new Promise((r) => setTimeout(r, 700));
+          continue;
+        }
+        return {
+          ok: false,
+          status: res.status,
+          data: { error: `Server returned unexpected status (${res.status}). Please retry in a moment.` },
+        };
+      }
+      const data = (await res.json()) as Record<string, unknown>;
+      return { ok: res.ok, status: res.status, data };
+    } catch (err) {
+      lastErr = err;
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, 700));
+      }
+    }
+  }
+  throw lastErr || new Error('Network error');
+}
+
 export const LoginView: React.FC<LoginViewProps> = ({ setupRequired, onAuthenticated }) => {
   const [userId, setUserId] = useState(setupRequired ? 'admin' : '');
   const [fullName, setFullName] = useState('System Administrator');
@@ -29,20 +70,19 @@ export const LoginView: React.FC<LoginViewProps> = ({ setupRequired, onAuthentic
       }
       setSubmitting(true);
       try {
-        const res = await fetch('/api/auth/setup-admin', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, fullName, password }),
+        const { ok, data } = await fetchAuthWithRetry('/api/auth/setup-admin', {
+          userId,
+          fullName,
+          password,
         });
-        const data = await res.json();
-        if (!res.ok) {
-          setError(data.error || 'Admin setup failed.');
+        if (!ok) {
+          setError(String(data.error || 'Admin setup failed.'));
           setSubmitting(false);
           return;
         }
-        onAuthenticated(data.token, data.user);
+        onAuthenticated(String(data.token), data.user as ERPUser);
       } catch {
-        setError('Unable to reach server.');
+        setError('Unable to reach server. Please wait a moment and try again.');
         setSubmitting(false);
       }
       return;
@@ -50,20 +90,18 @@ export const LoginView: React.FC<LoginViewProps> = ({ setupRequired, onAuthentic
 
     setSubmitting(true);
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, password }),
+      const { ok, data } = await fetchAuthWithRetry('/api/auth/login', {
+        userId,
+        password,
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || 'Invalid credentials.');
+      if (!ok) {
+        setError(String(data.error || 'Invalid credentials.'));
         setSubmitting(false);
         return;
       }
-      onAuthenticated(data.token, data.user);
+      onAuthenticated(String(data.token), data.user as ERPUser);
     } catch {
-      setError('Unable to reach server.');
+      setError('Unable to reach server. Please wait a moment and try again.');
       setSubmitting(false);
     }
   };

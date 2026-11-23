@@ -91,16 +91,35 @@ export default function App() {
       setDb(null);
     });
 
-    fetch('/api/auth/status')
-      .then((res) => res.json())
-      .then((data) => {
-        setSetupRequired(Boolean(data.setupRequired));
+    let active = true;
+    const checkAuthStatus = async () => {
+      for (let attempt = 0; attempt <= 3; attempt++) {
+        try {
+          const res = await fetch('/api/auth/status');
+          if (res.ok && (res.headers.get('content-type') || '').includes('application/json')) {
+            const data = await res.json();
+            if (active) {
+              setSetupRequired(Boolean(data.setupRequired));
+              setError(null);
+              setAuthChecking(false);
+            }
+            return;
+          }
+        } catch {
+          // Retry on startup cold start
+        }
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, 700));
+        }
+      }
+      if (active) {
         setAuthChecking(false);
-      })
-      .catch(() => {
-        setError('Unable to reach Provet ERP authentication server.');
-        setAuthChecking(false);
-      });
+      }
+    };
+    void checkAuthStatus();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const canAccess = (perm: PermissionKey): boolean => {

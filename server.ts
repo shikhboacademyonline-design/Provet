@@ -2,7 +2,6 @@ import 'dotenv/config';
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
 import {
   authenticateUser,
   claimInitialAdmin,
@@ -29,7 +28,7 @@ import {
 } from './server/db.ts';
 import type { ERPUser, PermissionKey } from './src/types/erp.ts';
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 type AuthedRequest = express.Request & { user?: ERPUser };
 
@@ -616,14 +615,30 @@ async function startServer() {
     }
   });
 
+  // Ensure unknown /api/* routes always return JSON instead of SPA HTML
+  app.all('/api/*', (_req, res) => {
+    res.status(404).json({ error: 'API endpoint not found' });
+  });
+
   // Vite middleware or production static serving
   const isProd = process.env.NODE_ENV === 'production';
   if (!isProd) {
+    let viteMiddleware: express.RequestHandler | null = null;
+    app.use((req, res, next) => {
+      if (viteMiddleware) return viteMiddleware(req, res, next);
+      res.status(503).send('Starting Provet Enterprise ERP...');
+    });
+
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Provet ERP server listening on http://localhost:${PORT}`);
+    });
+
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
-    app.use(vite.middlewares);
+    viteMiddleware = vite.middlewares;
   } else {
     const distPath = path.resolve(process.cwd(), 'dist');
     if (fs.existsSync(distPath)) {
@@ -632,11 +647,10 @@ async function startServer() {
         res.sendFile(path.join(distPath, 'index.html'));
       });
     }
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Provet ERP server listening on http://localhost:${PORT}`);
+    });
   }
-
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Provet ERP server listening on http://localhost:${PORT}`);
-  });
 }
 
 startServer();
