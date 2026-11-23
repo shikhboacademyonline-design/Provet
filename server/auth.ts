@@ -129,9 +129,8 @@ export function authenticateUser(userId: string, password: string): ERPUser | nu
   const envPass = process.env.ADMIN_PASSCODE?.trim();
   const users = loadUsers();
 
-  // Configured ADMIN_PASSCODE overrides any claimed admin fallback hash
-  if (envPass && cleanId.toLowerCase() === 'admin') {
-    if (!timingSafeCompareStrings(password, envPass)) return null;
+  // Configured ADMIN_PASSCODE authenticates admin directly, while still allowing stored user passwordHash
+  if (envPass && cleanId.toLowerCase() === 'admin' && timingSafeCompareStrings(password, envPass)) {
     const existingAdmin = users.find((u) => u.userId.toLowerCase() === 'admin');
     if (existingAdmin) {
       return toPublicUser({ ...existingAdmin, role: 'Admin', permissions: [...ALL_PERMISSIONS], active: true });

@@ -1,0 +1,374 @@
+{
+  "entities": {
+    "AdminEntry": {
+      "title": "AdminEntry",
+      "description": "Authorized Firebase administrator entry",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Firebase Auth UID of the administrator"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "minLength": 3,
+          "maxLength": 160,
+          "description": "Verified email address of the administrator"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["Admin"],
+          "maxLength": 20,
+          "description": "Administrator role designation"
+        },
+        "createdBy": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "UID of the creator administrator"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation"
+        }
+      },
+      "required": ["uid", "email", "role", "createdBy", "createdAt"]
+    },
+    "ErpWorkspace": {
+      "title": "ErpWorkspace",
+      "description": "Top-level Provet Enterprise ERP workspace metadata and company settings",
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "ownerId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "companyName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "tagline": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "address": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "phone": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "currency": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12
+        },
+        "recordCount": {
+          "type": "number"
+        },
+        "lastSyncedBy": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "ownerId",
+        "companyName",
+        "currency",
+        "recordCount",
+        "lastSyncedBy",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ErpMember": {
+      "title": "ErpMember",
+      "description": "Authorized ERP member profile and module access permissions inside a workspace",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "workspaceId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "ownerId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "minLength": 3,
+          "maxLength": 160
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "role": {
+          "type": "string",
+          "enum": ["Admin", "Staff"],
+          "maxLength": 20
+        },
+        "permissions": {
+          "type": "array",
+          "description": "Bounded list of allowed ERP module keys (max 7)"
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "uid",
+        "workspaceId",
+        "ownerId",
+        "email",
+        "displayName",
+        "role",
+        "permissions",
+        "active",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ErpAccount": {
+      "title": "ErpAccount",
+      "description": "Chart of Accounts head synced from Provet ERP",
+      "type": "object",
+      "properties": {
+        "accountId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "workspaceId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "ownerId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 140
+        },
+        "type": {
+          "type": "string",
+          "enum": ["Asset", "Liability", "Equity", "Revenue", "Expense"],
+          "maxLength": 24
+        },
+        "subType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "openingDebit": {
+          "type": "number"
+        },
+        "openingCredit": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "accountId",
+        "workspaceId",
+        "ownerId",
+        "code",
+        "name",
+        "type",
+        "subType",
+        "openingDebit",
+        "openingCredit",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ErpRecord": {
+      "title": "ErpRecord",
+      "description": "Typed ERP entity record (master, transaction, voucher, or HR item)",
+      "type": "object",
+      "properties": {
+        "recordId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "workspaceId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "ownerId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "collectionType": {
+          "type": "string",
+          "enum": [
+            "supplier",
+            "customer",
+            "product",
+            "stockMovement",
+            "stockRequisition",
+            "stockTransfer",
+            "damagedRecord",
+            "purchaseRequisition",
+            "purchaseQuotation",
+            "purchaseInvoice",
+            "purchaseReturn",
+            "salesQuotation",
+            "saleOrder",
+            "salesChallan",
+            "salesReturn",
+            "journalEntry",
+            "employee",
+            "attendance",
+            "leave",
+            "payrollRun"
+          ],
+          "maxLength": 40
+        },
+        "refNo": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "date": {
+          "type": "string",
+          "maxLength": 20
+        },
+        "amount": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Active", "Draft", "Posted", "Approved", "Completed", "Closed"],
+          "maxLength": 24
+        },
+        "data": {
+          "type": "object",
+          "description": "Native Firestore map storing record fields without JSON serialization"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "recordId",
+        "workspaceId",
+        "ownerId",
+        "collectionType",
+        "refNo",
+        "title",
+        "date",
+        "amount",
+        "status",
+        "data",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminEntry" },
+      "description": "Authorized Firebase administrator UIDs"
+    },
+    "/erp_workspaces/{workspaceId}": {
+      "schema": { "$ref": "#/entities/ErpWorkspace" },
+      "description": "Provet ERP workspace configuration and company profile"
+    },
+    "/erp_workspaces/{workspaceId}/members/{memberId}": {
+      "schema": { "$ref": "#/entities/ErpMember" },
+      "description": "Authorized ERP workspace members and module permissions"
+    },
+    "/erp_workspaces/{workspaceId}/accounts/{accountId}": {
+      "schema": { "$ref": "#/entities/ErpAccount" },
+      "description": "Chart of Accounts synced to Firestore"
+    },
+    "/erp_workspaces/{workspaceId}/records/{recordId}": {
+      "schema": { "$ref": "#/entities/ErpRecord" },
+      "description": "ERP operational records stored as typed documents"
+    }
+  }
+}

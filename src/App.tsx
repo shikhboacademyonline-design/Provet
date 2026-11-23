@@ -5,16 +5,20 @@ import {
   Boxes,
   ChevronDown,
   ChevronRight,
+  Cloud,
+  CloudOff,
   Globe,
   LayoutDashboard,
   LogOut,
   Menu,
+  RefreshCw,
   ShieldCheck,
   ShoppingBag,
   ShoppingCart,
   Users,
   X,
 } from 'lucide-react';
+import { useFirebase } from './contexts/FirebaseContext';
 import type { ERPDatabase, ERPUser, PermissionKey } from './types/erp';
 import { DateFilterModal, type ReportType } from './components/DateFilterModal';
 import { ReportViewerModal } from './components/ReportViewerModal';
@@ -57,6 +61,18 @@ export default function App() {
   } | null>(null);
 
   const t = labels[lang];
+  const { firebaseUser, syncing, lastSyncedAt, syncError, connectWithGoogle, disconnectFirebase, syncWorkspace } =
+    useFirebase();
+
+  useEffect(() => {
+    if (!db || !firebaseUser) return;
+    const timer = setTimeout(() => {
+      syncWorkspace(db).catch((err) => {
+        console.error('Firebase background sync error:', err);
+      });
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [db, firebaseUser, syncWorkspace]);
 
   const handleLogout = () => {
     setAuthToken(null);
@@ -422,7 +438,35 @@ export default function App() {
               {currentUser.fullName} · {currentUser.role}
             </span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
+            {firebaseUser ? (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => syncWorkspace(db)}
+                  disabled={syncing}
+                  className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-[#1E7134]/30 bg-[#EAF4EE] px-2.5 py-1 text-[11px] font-semibold text-[#07432B] hover:bg-[#DDE7E0]/60 disabled:opacity-60"
+                  title={syncError || `Synced to Firestore as ${firebaseUser.email}`}
+                >
+                  <RefreshCw className={`h-3 w-3 ${syncing ? 'animate-spin' : ''}`} />
+                  {syncing ? 'Syncing Cloud...' : lastSyncedAt ? `Firebase Synced (${lastSyncedAt})` : 'Sync Firebase'}
+                </button>
+                <button
+                  onClick={disconnectFirebase}
+                  className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-[#4B6356] hover:text-[#DC2626]"
+                  title="Disconnect Firebase Google session"
+                >
+                  <CloudOff className="h-3 w-3" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={connectWithGoogle}
+                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-[#07432B]/25 bg-white px-2.5 py-1 text-[11px] font-semibold text-[#07432B] hover:bg-[#EAF4EE]"
+              >
+                <Cloud className="h-3.5 w-3.5 text-[#1E7134]" />
+                Connect Firebase Cloud
+              </button>
+            )}
             <button
               onClick={() => setLang(lang === 'en' ? 'bn' : 'en')}
               className="inline-flex items-center gap-1.5 whitespace-nowrap font-medium text-[#07432B] hover:underline"
@@ -439,6 +483,11 @@ export default function App() {
             </button>
           </div>
         </div>
+        {syncError && (
+          <div className="no-print border-b border-red-200 bg-red-50 px-6 py-1.5 text-xs text-[#DC2626]">
+            Firebase Sync Notice: {syncError}
+          </div>
+        )}
 
         {/* Main Viewport */}
         <main className={`mx-auto w-full max-w-[1440px] flex-1 p-6 ${activeReport ? 'no-print' : ''}`}>

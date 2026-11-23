@@ -1,0 +1,33 @@
+[
+  {
+    "id": "usr-1795454182079",
+    "userId": "admin",
+    "fullName": "System Administrator",
+    "role": "Admin",
+    "permissions": [
+      "dashboard",
+      "stock",
+      "purchase",
+      "sales",
+      "account",
+      "reports",
+      "hr"
+    ],
+    "active": true,
+    "createdAt": "2026-11-23",
+    "passwordHash": "4218e9a3c203751d7eb251dc9ae055a0:35d814b6fcd0d162138cf9f9355877a3a544b3f5dd1335cbe99fc469642723044abb1d39dc1dc45eaade7382a8aed3b675688229f43ffe4aa89b41d8baf4e2eb"
+  },
+  {
+    "id": "usr-1795456409200-s42",
+    "userId": "Accounts",
+    "fullName": "Md. Mintu miah",
+    "role": "Staff",
+    "permissions": [
+      "dashboard",
+      "sales"
+    ],
+    "active": true,
+    "createdAt": "2026-11-23",
+    "passwordHash": "5a2912cdabf42ce620b5b9fd60f9b032:55b7900704b402ad903f785f3780a31426eccabeb3b3a45423105cf7d81145a57179de7b48031a33d29aca2afec5f162d3e82d045b39ded9bfb85d8ddb83875c"
+  }
+]
